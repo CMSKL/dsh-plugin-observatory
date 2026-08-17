@@ -11,6 +11,8 @@ An independent, installable DSH plugin bundle for compatibility audits and runti
 
 `PluginObservatoryService.audit(packagePath, cwd, signal?)` exposes the same static audit to trusted plugins. The service captures host package versions once when it activates: the DSH CLI package is authoritative when resolvable, otherwise one consistent version from the active DSH release family is used. An unavailable or conflicting host version produces an explicit review warning. `snapshot(entryId?)` returns a detached point-in-time lifecycle report, and `assertObservedTransition(...)` supports the invariant companion. Loader remains the current-state authority; the Observatory owns only its bounded process-local transition history.
 
+The current release is a prerelease. npm publishes it under the `next` dist-tag; the unqualified `latest` tag is intentionally not enabled yet.
+
 ## Configuration
 
 | Key | Default | Meaning |
@@ -23,6 +25,35 @@ An independent, installable DSH plugin bundle for compatibility audits and runti
 | `maxObservedEntries` | `256` | Maximum Loader entry histories retained in memory. |
 | `maxTransitionsPerEntry` | `64` | Maximum recent transitions retained for one Loader entry. |
 
+## Install
+
+Install the current npm prerelease into a DSH profile:
+
+```sh
+dsh plugin --profile demo add dsh-plugin-observatory@next
+```
+
+For a reproducible install, pin the exact version:
+
+```sh
+dsh plugin --profile demo add dsh-plugin-observatory@0.1.0-rc.2
+```
+
+Alternatively, download the tarball and checksum from the [v0.1.0-rc.2 GitHub Release](https://github.com/CMSKL/dsh-plugin-observatory/releases/tag/v0.1.0-rc.2), then verify and install it:
+
+```sh
+shasum -a 256 -c dsh-plugin-observatory-0.1.0-rc.2.tgz.sha256
+dsh plugin --profile demo add ./dsh-plugin-observatory-0.1.0-rc.2.tgz
+```
+
+The config dump should contain the `observatory` and `observatory-invariant` rows from `cordis.patch.yml`:
+
+```sh
+dsh --profile demo --dump-config
+```
+
+Start the selected profile normally after checking the composed configuration. Remove the bundle with `dsh plugin --profile demo remove dsh-plugin-observatory`.
+
 ## Install from a local checkout
 
 Build this repository and add it to a DSH profile:
@@ -34,9 +65,7 @@ dsh plugin --profile demo add .
 dsh --profile demo --dump-config
 ```
 
-The config dump should contain the `observatory` and `observatory-invariant` rows from `cordis.patch.yml`. Start the selected profile normally after checking the composed configuration. Remove the bundle with `dsh plugin --profile demo remove dsh-plugin-observatory`.
-
-GitHub installation requires pnpm build authorization because this source package uses `prepare` to compile TypeScript. A registry release or a `pnpm pack` tarball contains prebuilt `lib/` files and does not require source-build authorization.
+Installing directly from a Git checkout requires pnpm build authorization because the source package uses `prepare` to compile TypeScript. The npm package and attached GitHub Release tarball contain prebuilt `lib/` files and do not require source-build authorization.
 
 This package is the product unit. A future CLI, CI reporter, or Web view should be a thin consumer of `ctx.pluginObservatory`, not a second compatibility engine.
 
@@ -53,7 +82,7 @@ pnpm pack --dry-run
 
 Runtime DSH and Cordis packages are peer dependencies; development uses their published versions rather than workspace links into the official Harness repository.
 
-The required compatibility matrix runs DSH `0.1.0-rc.6` on Node `22.19.0` and Node `24`. The E2E test installs a built tarball into an isolated temporary DSH profile, verifies both bundle rows and exports, removes it, and leaves the user's profiles untouched. CI also probes the latest published DSH version on a weekly and manually triggered workflow.
+The required compatibility matrix runs DSH `0.1.0-rc.6` on Node `22.19.0` and Node `24`. The E2E test installs either the exact release tarball or a pinned registry version into an isolated temporary DSH profile, verifies the installed name and version, both bundle rows, and both exports, then removes it without touching user profiles. CI also probes the latest published DSH version on a weekly and manually triggered workflow.
 
 ## Model Experience
 

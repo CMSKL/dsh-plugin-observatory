@@ -11,6 +11,8 @@
 
 `PluginObservatoryService.audit(packagePath, cwd, signal?)` 向受信插件暴露同一套静态审计。服务在激活时只采集一次宿主包版本：能够解析 DSH CLI 包时以它为准，否则使用当前 DSH 发行族中一致的核心包版本；版本不可用或相互冲突时会产生明确的人工复核警告。`snapshot(entryId?)` 返回分离的调用时点生命周期报告，`assertObservedTransition(...)` 支持 invariant companion。Loader 仍是当前状态的权威；Observatory 只拥有有界、进程本地的转换历史。
 
+当前版本是候选版本。npm 只通过 `next` dist-tag 发布，尚未启用不带限定词的 `latest`。
+
 ## 配置
 
 | 键 | 默认值 | 含义 |
@@ -23,6 +25,35 @@
 | `maxObservedEntries` | `256` | 内存中最多保留的 Loader 条目历史数。 |
 | `maxTransitionsPerEntry` | `64` | 每个 Loader 条目最多保留的最近转换数。 |
 
+## 安装
+
+把当前 npm 候选版本安装到 DSH profile：
+
+```sh
+dsh plugin --profile demo add dsh-plugin-observatory@next
+```
+
+需要可复现安装时，固定精确版本：
+
+```sh
+dsh plugin --profile demo add dsh-plugin-observatory@0.1.0-rc.2
+```
+
+也可以从 [v0.1.0-rc.2 GitHub Release](https://github.com/CMSKL/dsh-plugin-observatory/releases/tag/v0.1.0-rc.2) 下载 tarball 和 checksum，校验后安装：
+
+```sh
+shasum -a 256 -c dsh-plugin-observatory-0.1.0-rc.2.tgz.sha256
+dsh plugin --profile demo add ./dsh-plugin-observatory-0.1.0-rc.2.tgz
+```
+
+配置输出中应出现来自 `cordis.patch.yml` 的 `observatory` 与 `observatory-invariant` 两行：
+
+```sh
+dsh --profile demo --dump-config
+```
+
+确认组合结果后，再按正常方式启动对应 profile。卸载命令为 `dsh plugin --profile demo remove dsh-plugin-observatory`。
+
 ## 从本地 checkout 安装
 
 先构建独立仓库，再把它添加到 DSH profile：
@@ -34,9 +65,7 @@ dsh plugin --profile demo add .
 dsh --profile demo --dump-config
 ```
 
-配置输出中应出现来自 `cordis.patch.yml` 的 `observatory` 与 `observatory-invariant` 两行。确认组合结果后，再按正常方式启动对应 profile。卸载命令为 `dsh plugin --profile demo remove dsh-plugin-observatory`。
-
-通过 GitHub 源码安装时，pnpm 需要获得构建授权，因为本包使用 `prepare` 编译 TypeScript。发布到 registry 的版本或 `pnpm pack` 生成的 tarball 会包含预构建的 `lib/`，不需要源码构建授权。
+直接从 Git checkout 安装时，pnpm 需要获得构建授权，因为源码包使用 `prepare` 编译 TypeScript。npm 包和 GitHub Release 附带的 tarball 都包含预构建的 `lib/`，不需要源码构建授权。
 
 产品单元就是这个独立插件包。未来的 CLI（命令行界面）、CI 报告器或 Web 视图应作为 `ctx.pluginObservatory` 的轻量消费方，而不是第二套兼容性引擎。
 
@@ -53,7 +82,7 @@ pnpm pack --dry-run
 
 运行时 DSH 与 Cordis 包均为 peer dependency；开发阶段使用它们已发布的版本，不会通过 workspace 链接回官方 Harness 仓库。
 
-必过兼容矩阵在 Node `22.19.0` 和 Node `24` 上验证 DSH `0.1.0-rc.6`。E2E 测试会把构建后的 tarball 安装到隔离的临时 DSH profile，检查两条 bundle 配置与包导出，随后卸载并清理，不会触碰用户 profile。CI 还会通过每周定时和手动触发任务探测最新发布的 DSH 版本。
+必过兼容矩阵在 Node `22.19.0` 和 Node `24` 上验证 DSH `0.1.0-rc.6`。E2E 测试会把精确 release tarball 或固定 registry 版本安装到隔离的临时 DSH profile，检查实际包名和版本、两条 bundle 配置与两个包导出，随后卸载并清理，不会触碰用户 profile。CI 还会通过每周定时和手动触发任务探测最新发布的 DSH 版本。
 
 ## 模型体验
 

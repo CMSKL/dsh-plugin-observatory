@@ -1,0 +1,242 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing annotated tag; run this workflow from the same tag ref
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  DSH_VERSION: 0.1.0-rc.6
+  NPM_VERSION: 11.18.0
+  PNPM_VERSION: 11.7.0
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22.19.0, 24]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validate annotated tag and package version
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git cat-file -t "$RELEASE_TAG")" = tag
+          package_version=$(node -p "require('./package.json').version")
+          test "$RELEASE_TAG" = "v$package_version"
+          test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$(git rev-parse HEAD)"
+          if [[ "$GITHUB_EVENT_NAME" = workflow_dispatch ]]; then
+            test "$GITHUB_REF_TYPE" = tag
+            test "$GITHUB_REF_NAME" = "$RELEASE_TAG"
+          fi
+          PACKAGE_VERSION="$package_version" node --input-type=module -e "import semver from 'semver'; const value = process.env.PACKAGE_VERSION; if (!semver.valid(value) || !semver.prerelease(value)) process.exit(1)"
+      - run: pnpm run check
+      - run: pnpm run test:coverage
+      - run: pnpm run publint
+      - run: pnpm pack --dry-run
+      - run: pnpm run test:e2e
+
+  package:
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      filename: ${{ steps.metadata.outputs.filename }}
+      package_name: ${{ steps.metadata.outputs.package_name }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      version: ${{ steps.metadata.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: metadata
+        name: Resolve artifact metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          filename="${package_name#@}"
+          filename="${filename//\//-}-$version.tgz"
+          echo "filename=$filename" >> "$GITHUB_OUTPUT"
+          echo "package_name=$package_name" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Build release tarball and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir release-artifacts
+          pnpm pack --pack-destination release-artifacts
+          test -f "release-artifacts/${{ steps.metadata.outputs.filename }}"
+          cd release-artifacts
+          sha256sum "${{ steps.metadata.outputs.filename }}" > "${{ steps.metadata.outputs.filename }}.sha256"
+          sha256sum -c "${{ steps.metadata.outputs.filename }}.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-package-${{ steps.metadata.outputs.tag }}
+          path: release-artifacts/*
+          if-no-files-found: error
+          retention-days: 7
+
+  artifact-smoke:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22.19.0, 24]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.package.outputs.tag }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-package-${{ needs.package.outputs.tag }}
+          path: release-artifacts
+      - run: pnpm run test:e2e
+        env:
+          PACKAGE_SPEC: ${{ github.workspace }}/release-artifacts/${{ needs.package.outputs.filename }}
+
+  publish:
+    needs: [package, artifact-smoke]
+    runs-on: ubuntu-latest
+    environment:
+      name: npm-publish
+      url: https://www.npmjs.com/package/${{ needs.package.outputs.package_name }}/v/${{ needs.package.outputs.version }}
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.package.outputs.tag }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: npm install --global npm@${{ env.NPM_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-package-${{ needs.package.outputs.tag }}
+          path: release-artifacts
+      - name: Verify artifact checksum
+        working-directory: release-artifacts
+        run: sha256sum -c "${{ needs.package.outputs.filename }}.sha256"
+      - name: Create draft release and upload verified assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTES: |
+            Install the prerelease from npm with `dsh plugin --profile demo add dsh-plugin-observatory@next`, or download the attached tarball and verify its SHA-256 checksum before adding it to a profile.
+
+            This release candidate is validated with @deepseek-ai/dsh 0.1.0-rc.6 on Node.js 22.19.0 and 24. Static compatibility findings do not establish arbitrary plugin execution safety.
+        run: |
+          set -euo pipefail
+          filename="${{ needs.package.outputs.filename }}"
+          tag="${{ needs.package.outputs.tag }}"
+          version="${{ needs.package.outputs.version }}"
+          if ! gh release list --limit 100 --json tagName | jq -e --arg tag "$tag" '.[] | select(.tagName == $tag)' >/dev/null; then
+            gh release create "$tag" --draft --prerelease --verify-tag --title "dsh-plugin-observatory v$version" --notes "$RELEASE_NOTES"
+          fi
+          verify_or_upload() {
+            local path="$1"
+            local name
+            local local_digest
+            local remote_digest
+            name=$(basename "$path")
+            local_digest="sha256:$(sha256sum "$path" | awk '{print $1}')"
+            remote_digest=$(gh release view "$tag" --json assets | jq -r --arg name "$name" '.assets[] | select(.name == $name) | .digest')
+            if [[ -z "$remote_digest" ]]; then
+              gh release upload "$tag" "$path"
+            elif [[ "$remote_digest" != "$local_digest" ]]; then
+              echo "release asset digest mismatch for $name" >&2
+              exit 1
+            fi
+          }
+          verify_or_upload "release-artifacts/$filename"
+          verify_or_upload "release-artifacts/$filename.sha256"
+      - name: Publish exact tarball to npm with OIDC
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_name="${{ needs.package.outputs.package_name }}"
+          version="${{ needs.package.outputs.version }}"
+          tarball="release-artifacts/${{ needs.package.outputs.filename }}"
+          local_integrity=$(node -e "const fs=require('node:fs');const crypto=require('node:crypto');process.stdout.write('sha512-'+crypto.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))" "$tarball")
+          remote_integrity=$(npm view "$package_name@$version" dist.integrity --json 2>/dev/null | jq -r '. // empty' || true)
+          if [[ -z "$remote_integrity" ]]; then
+            npm publish "$tarball" --tag next --access public --provenance
+          elif [[ "$remote_integrity" != "$local_integrity" ]]; then
+            echo "npm integrity mismatch for $package_name@$version" >&2
+            exit 1
+          fi
+          for attempt in 1 2 3 4 5 6; do
+            remote_integrity=$(npm view "$package_name@$version" dist.integrity --json 2>/dev/null | jq -r '. // empty' || true)
+            if [[ "$remote_integrity" = "$local_integrity" ]]; then
+              break
+            fi
+            if [[ "$attempt" = 6 ]]; then
+              echo "npm registry did not expose the expected integrity" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+          dist_tags=$(npm view "$package_name" dist-tags --json)
+          test "$(jq -r '.next // empty' <<<"$dist_tags")" = "$version"
+          test -z "$(jq -r '.latest // empty' <<<"$dist_tags")"
+      - name: Verify registry installation
+        run: pnpm run test:e2e
+        env:
+          PACKAGE_SPEC: ${{ needs.package.outputs.package_name }}@${{ needs.package.outputs.version }}
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${{ needs.package.outputs.tag }}" --draft=false --prerelease

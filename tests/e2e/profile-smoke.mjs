@@ -13,6 +13,9 @@ const projectRoot = fileURLToPath(new URL('../..', import.meta.url))
 const packageManifest = JSON.parse(await readFile(join(projectRoot, 'package.json'), 'utf8'))
 const packageName = packageManifest.name
 const packageVersion = packageManifest.version
+const packageSpec = process.env.PACKAGE_SPEC?.trim() || undefined
+const expectedPackageName = process.env.EXPECTED_PACKAGE_NAME?.trim() || packageName
+const expectedPackageVersion = process.env.EXPECTED_PACKAGE_VERSION?.trim() || packageVersion
 const dshVersion = process.env.DSH_VERSION ?? '0.1.0-rc.6'
 const profileName = 'observatory-e2e'
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
@@ -46,8 +49,8 @@ function parseDump(text) {
 }
 
 function hasObservatoryRows(rows) {
-  return rows.some(row => row?.id === 'observatory' && row.name === packageName)
-    && rows.some(row => row?.id === 'observatory-invariant' && row.name === `${packageName}/invariant`)
+  return rows.some(row => row?.id === 'observatory' && row.name === expectedPackageName)
+    && rows.some(row => row?.id === 'observatory-invariant' && row.name === `${expectedPackageName}/invariant`)
 }
 
 const root = await mkdtemp(join(tmpdir(), 'dsh-observatory-e2e-'))
@@ -90,9 +93,12 @@ try {
     ].includes(path) && !/^lib\/[^/]+\.(?:js|d\.ts)$/u.test(path))
   assert(unexpected.length === 0, `tarball contains unexpected files: ${unexpected.join(', ')}`)
 
-  await run(pnpm, ['pack', '--pack-destination', artifactsDir], { cwd: projectRoot })
-  const tarballName = `${packageName.replace(/^@/u, '').replaceAll('/', '-')}-${packageVersion}.tgz`
-  const tarball = join(artifactsDir, tarballName)
+  let installSpec = packageSpec
+  if (!installSpec) {
+    await run(pnpm, ['pack', '--pack-destination', artifactsDir], { cwd: projectRoot })
+    const tarballName = `${packageName.replace(/^@/u, '').replaceAll('/', '-')}-${packageVersion}.tgz`
+    installSpec = join(artifactsDir, tarballName)
+  }
 
   await run(pnpm, ['--dir', harnessDir, 'add', '--save-exact', `@deepseek-ai/dsh@${dshVersion}`])
   const dshBin = join(
@@ -105,22 +111,27 @@ try {
   const version = await run(dshBin, ['--version'], { env })
   assert(version.stdout.trim() === dshVersion, `expected dsh ${dshVersion}, got ${version.stdout.trim()}`)
 
-  await run(dshBin, ['plugin', '--profile', profileName, 'add', tarball], { cwd: projectRoot, env })
+  await run(dshBin, ['plugin', '--profile', profileName, 'add', installSpec], { cwd: projectRoot, env })
   const installedDump = await run(dshBin, ['--profile', profileName, '--dump-config'], { env })
   assert(hasObservatoryRows(parseDump(installedDump.stdout)), 'installed profile is missing Observatory bundle rows')
 
   const profileDir = join(dshHome, 'profiles', profileName)
   const profileRequire = createRequire(join(profileDir, 'package.json'))
-  const mainModule = await import(pathToFileURL(profileRequire.resolve(packageName)).href)
-  const invariantModule = await import(pathToFileURL(profileRequire.resolve(`${packageName}/invariant`)).href)
+  const installedManifest = JSON.parse(
+    await readFile(profileRequire.resolve(`${expectedPackageName}/package.json`), 'utf8'),
+  )
+  assert(installedManifest.name === expectedPackageName, `expected package ${expectedPackageName}, got ${installedManifest.name}`)
+  assert(installedManifest.version === expectedPackageVersion, `expected package ${expectedPackageVersion}, got ${installedManifest.version}`)
+  const mainModule = await import(pathToFileURL(profileRequire.resolve(expectedPackageName)).href)
+  const invariantModule = await import(pathToFileURL(profileRequire.resolve(`${expectedPackageName}/invariant`)).href)
   assert(typeof mainModule.default === 'function', 'package main export must be loadable')
   assert(typeof invariantModule.apply === 'function', 'package invariant export must be loadable')
 
-  await run(dshBin, ['plugin', '--profile', profileName, 'remove', packageName], { env })
+  await run(dshBin, ['plugin', '--profile', profileName, 'remove', expectedPackageName], { env })
   const removedDump = await run(dshBin, ['--profile', profileName, '--dump-config'], { env })
   assert(!hasObservatoryRows(parseDump(removedDump.stdout)), 'removed profile still contains Observatory bundle rows')
 
-  process.stdout.write(`DSH ${dshVersion} tarball/profile smoke test passed\n`)
+  process.stdout.write(`DSH ${dshVersion} package/profile smoke test passed for ${expectedPackageName}@${expectedPackageVersion}\n`)
 } finally {
   await rm(root, { recursive: true, force: true })
 }

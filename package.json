@@ -1,9 +1,19 @@
 {
   "name": "dsh-plugin-observatory",
   "description": "Independent DSH plugin compatibility audit and bounded Loader lifecycle observation",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "tag": "next",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CMSKL/dsh-plugin-observatory.git"
+  },
+  "homepage": "https://github.com/CMSKL/dsh-plugin-observatory#readme",
+  "bugs": {
+    "url": "https://github.com/CMSKL/dsh-plugin-observatory/issues"
   },
   "type": "module",
   "main": "lib/index.js",
