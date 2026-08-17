@@ -52,10 +52,6 @@ jobs:
           package_version=$(node -p "require('./package.json').version")
           test "$RELEASE_TAG" = "v$package_version"
           test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$(git rev-parse HEAD)"
-          if [[ "$GITHUB_EVENT_NAME" = workflow_dispatch ]]; then
-            test "$GITHUB_REF_TYPE" = tag
-            test "$GITHUB_REF_NAME" = "$RELEASE_TAG"
-          fi
           PACKAGE_VERSION="$package_version" node --input-type=module -e "import semver from 'semver'; const value = process.env.PACKAGE_VERSION; if (!semver.valid(value) || !semver.prerelease(value)) process.exit(1)"
       - run: pnpm run check
       - run: pnpm run test:coverage
@@ -212,7 +208,7 @@ jobs:
           tarball="release-artifacts/${{ needs.package.outputs.filename }}"
           latest_before=$(npm view "$package_name" dist-tags.latest --json 2>/dev/null | jq -r '. // empty' || true)
           local_integrity=$(node -e "const fs=require('node:fs');const crypto=require('node:crypto');process.stdout.write('sha512-'+crypto.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))" "$tarball")
-          remote_integrity=$(npm view "$package_name@$version" dist.integrity --json 2>/dev/null | jq -r '. // empty' || true)
+          remote_integrity=$(npm view "$package_name@$version" dist.integrity --json 2>/dev/null | jq -r 'if type == "string" then . else empty end' || true)
           if [[ -z "$remote_integrity" ]]; then
             npm publish "$tarball" --tag next --access public --provenance
           elif [[ "$remote_integrity" != "$local_integrity" ]]; then
@@ -220,7 +216,7 @@ jobs:
             exit 1
           fi
           for attempt in 1 2 3 4 5 6; do
-            remote_integrity=$(npm view "$package_name@$version" dist.integrity --json 2>/dev/null | jq -r '. // empty' || true)
+            remote_integrity=$(npm view "$package_name@$version" dist.integrity --json 2>/dev/null | jq -r 'if type == "string" then . else empty end' || true)
             if [[ "$remote_integrity" = "$local_integrity" ]]; then
               break
             fi
