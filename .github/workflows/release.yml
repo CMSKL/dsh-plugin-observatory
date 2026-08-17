@@ -210,6 +210,7 @@ jobs:
           package_name="${{ needs.package.outputs.package_name }}"
           version="${{ needs.package.outputs.version }}"
           tarball="release-artifacts/${{ needs.package.outputs.filename }}"
+          latest_before=$(npm view "$package_name" dist-tags.latest --json 2>/dev/null | jq -r '. // empty' || true)
           local_integrity=$(node -e "const fs=require('node:fs');const crypto=require('node:crypto');process.stdout.write('sha512-'+crypto.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))" "$tarball")
           remote_integrity=$(npm view "$package_name@$version" dist.integrity --json 2>/dev/null | jq -r '. // empty' || true)
           if [[ -z "$remote_integrity" ]]; then
@@ -231,7 +232,9 @@ jobs:
           done
           dist_tags=$(npm view "$package_name" dist-tags --json)
           test "$(jq -r '.next // empty' <<<"$dist_tags")" = "$version"
-          test -z "$(jq -r '.latest // empty' <<<"$dist_tags")"
+          latest_after=$(jq -r '.latest // empty' <<<"$dist_tags")
+          test "$latest_after" = "$latest_before"
+          test "$latest_after" != "$version"
       - name: Verify registry installation
         run: pnpm run test:e2e
         env:
