@@ -1,0 +1,16 @@
+# Install the Observatory Host service, model-facing read-only tools, and its
+# package-owned runtime invariant beside the existing DSH composition.
+- insert:
+    - id: observatory
+      name: 'dsh-plugin-observatory'
+      config:
+        allowedRoots: !!js "[process.cwd(), dshHomePath('profiles')]"
+        maxManifestBytes: 262144
+        maxPatchBytes: 1048576
+        maxPatchDepth: 64
+        maxPatchNodes: 10000
+        maxObservedEntries: 256
+        maxTransitionsPerEntry: 64
+
+    - id: observatory-invariant
+      name: 'dsh-plugin-observatory/invariant'
