@@ -11,7 +11,7 @@ An independent, installable DSH plugin bundle for compatibility audits and runti
 
 `PluginObservatoryService.audit(packagePath, cwd, signal?)` exposes the same static audit to trusted plugins. The service captures host package versions once when it activates: the DSH CLI package is authoritative when resolvable, otherwise one consistent version from the active DSH release family is used. An unavailable or conflicting host version produces an explicit review warning. `snapshot(entryId?)` returns a detached point-in-time lifecycle report, and `assertObservedTransition(...)` supports the invariant companion. Loader remains the current-state authority; the Observatory owns only its bounded process-local transition history.
 
-The current release is a prerelease, and npm publishes release candidates only under the `next` dist-tag. The `latest` tag is intentionally unset so an unqualified install cannot silently select a prerelease or an obsolete bootstrap build. Use `@next` or an exact version until a stable release intentionally establishes `latest`.
+The current release is a prerelease, and npm publishes release candidates only under the `next` dist-tag. npm's first-package bootstrap assigned `latest` to `0.1.0-rc.1`; prerelease automation freezes that bootstrap tag and never advances it. Use `@next` or an exact version instead of an unqualified package spec until a stable release intentionally replaces `latest`.
 
 ## Configuration
 
