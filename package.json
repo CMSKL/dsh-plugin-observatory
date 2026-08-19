@@ -1,10 +1,10 @@
 {
   "name": "dsh-plugin-observatory",
   "description": "Independent DSH plugin compatibility audit and bounded Loader lifecycle observation",
-  "version": "0.1.0-rc.3",
+  "version": "0.1.0",
   "publishConfig": {
     "access": "public",
-    "tag": "next",
+    "tag": "latest",
     "provenance": true
   },
   "repository": {

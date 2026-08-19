@@ -11,7 +11,7 @@ An independent, installable DSH plugin bundle for compatibility audits and runti
 
 `PluginObservatoryService.audit(packagePath, cwd, signal?)` exposes the same static audit to trusted plugins. The service captures host package versions once when it activates: the DSH CLI package is authoritative when resolvable, otherwise one consistent version from the active DSH release family is used. An unavailable or conflicting host version produces an explicit review warning. `snapshot(entryId?)` returns a detached point-in-time lifecycle report, and `assertObservedTransition(...)` supports the invariant companion. Loader remains the current-state authority; the Observatory owns only its bounded process-local transition history.
 
-The current release is a prerelease, and npm publishes release candidates only under the `next` dist-tag. npm's first-package bootstrap assigned `latest` to `0.1.0-rc.1`; prerelease automation freezes that bootstrap tag and never advances it. Use `@next` or an exact version instead of an unqualified package spec until a stable release intentionally replaces `latest`.
+Version `0.1.0` is the first stable release and is published under npm's `latest` dist-tag. Future release candidates remain isolated under `next`; unqualified installs resolve only to a stable release.
 
 ## Configuration
 
@@ -27,23 +27,23 @@ The current release is a prerelease, and npm publishes release candidates only u
 
 ## Install
 
-Install the current npm prerelease into a DSH profile:
+Install the current stable release into a DSH profile:
 
 ```sh
-dsh plugin --profile demo add dsh-plugin-observatory@next
+dsh plugin --profile demo add dsh-plugin-observatory
 ```
 
 For a reproducible install, pin the exact version:
 
 ```sh
-dsh plugin --profile demo add dsh-plugin-observatory@0.1.0-rc.3
+dsh plugin --profile demo add dsh-plugin-observatory@0.1.0
 ```
 
-Alternatively, download the tarball and checksum from the [v0.1.0-rc.3 GitHub Release](https://github.com/CMSKL/dsh-plugin-observatory/releases/tag/v0.1.0-rc.3), then verify and install it:
+Alternatively, download the tarball and checksum from the [v0.1.0 GitHub Release](https://github.com/CMSKL/dsh-plugin-observatory/releases/tag/v0.1.0), then verify and install it:
 
 ```sh
-shasum -a 256 -c dsh-plugin-observatory-0.1.0-rc.3.tgz.sha256
-dsh plugin --profile demo add ./dsh-plugin-observatory-0.1.0-rc.3.tgz
+shasum -a 256 -c dsh-plugin-observatory-0.1.0.tgz.sha256
+dsh plugin --profile demo add ./dsh-plugin-observatory-0.1.0.tgz
 ```
 
 The config dump should contain the `observatory` and `observatory-invariant` rows from `cordis.patch.yml`:

@@ -11,7 +11,7 @@
 
 `PluginObservatoryService.audit(packagePath, cwd, signal?)` 向受信插件暴露同一套静态审计。服务在激活时只采集一次宿主包版本：能够解析 DSH CLI 包时以它为准，否则使用当前 DSH 发行族中一致的核心包版本；版本不可用或相互冲突时会产生明确的人工复核警告。`snapshot(entryId?)` 返回分离的调用时点生命周期报告，`assertObservedTransition(...)` 支持 invariant companion。Loader 仍是当前状态的权威；Observatory 只拥有有界、进程本地的转换历史。
 
-当前版本是候选版本，RC 只通过 npm 的 `next` dist-tag 发布。npm 在首次创建包时自动把 `latest` 指向了 `0.1.0-rc.1`；预发布自动化会冻结这个引导标签，不再推进它。在稳定版明确接管 `latest` 之前，请使用 `@next` 或精确版本，不要使用不带限定词的包名。
+`0.1.0` 是首个稳定版本，通过 npm 的 `latest` dist-tag 发布。后续候选版本仍只进入 `next`，不带版本限定的安装只会解析到稳定版本。
 
 ## 配置
 
@@ -27,23 +27,23 @@
 
 ## 安装
 
-把当前 npm 候选版本安装到 DSH profile：
+把当前 npm 稳定版本安装到 DSH profile：
 
 ```sh
-dsh plugin --profile demo add dsh-plugin-observatory@next
+dsh plugin --profile demo add dsh-plugin-observatory
 ```
 
 需要可复现安装时，固定精确版本：
 
 ```sh
-dsh plugin --profile demo add dsh-plugin-observatory@0.1.0-rc.3
+dsh plugin --profile demo add dsh-plugin-observatory@0.1.0
 ```
 
-也可以从 [v0.1.0-rc.3 GitHub Release](https://github.com/CMSKL/dsh-plugin-observatory/releases/tag/v0.1.0-rc.3) 下载 tarball 和 checksum，校验后安装：
+也可以从 [v0.1.0 GitHub Release](https://github.com/CMSKL/dsh-plugin-observatory/releases/tag/v0.1.0) 下载 tarball 和 checksum，校验后安装：
 
 ```sh
-shasum -a 256 -c dsh-plugin-observatory-0.1.0-rc.3.tgz.sha256
-dsh plugin --profile demo add ./dsh-plugin-observatory-0.1.0-rc.3.tgz
+shasum -a 256 -c dsh-plugin-observatory-0.1.0.tgz.sha256
+dsh plugin --profile demo add ./dsh-plugin-observatory-0.1.0.tgz
 ```
 
 配置输出中应出现来自 `cordis.patch.yml` 的 `observatory` 与 `observatory-invariant` 两行：

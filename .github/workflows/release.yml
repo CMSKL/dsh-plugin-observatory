@@ -50,9 +50,10 @@ jobs:
           set -euo pipefail
           test "$(git cat-file -t "$RELEASE_TAG")" = tag
           package_version=$(node -p "require('./package.json').version")
+          publish_tag=$(node -p "require('./package.json').publishConfig.tag")
           test "$RELEASE_TAG" = "v$package_version"
           test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$(git rev-parse HEAD)"
-          PACKAGE_VERSION="$package_version" node --input-type=module -e "import semver from 'semver'; const value = process.env.PACKAGE_VERSION; if (!semver.valid(value) || !semver.prerelease(value)) process.exit(1)"
+          PACKAGE_VERSION="$package_version" PUBLISH_TAG="$publish_tag" node --input-type=module -e "import semver from 'semver'; const version = process.env.PACKAGE_VERSION; const expectedTag = semver.prerelease(version) ? 'next' : 'latest'; if (!semver.valid(version) || process.env.PUBLISH_TAG !== expectedTag) process.exit(1)"
       - run: pnpm run check
       - run: pnpm run test:coverage
       - run: pnpm run publint
@@ -65,6 +66,8 @@ jobs:
     outputs:
       filename: ${{ steps.metadata.outputs.filename }}
       package_name: ${{ steps.metadata.outputs.package_name }}
+      prerelease: ${{ steps.metadata.outputs.prerelease }}
+      publish_tag: ${{ steps.metadata.outputs.publish_tag }}
       tag: ${{ steps.metadata.outputs.tag }}
       version: ${{ steps.metadata.outputs.version }}
     steps:
@@ -87,10 +90,18 @@ jobs:
           set -euo pipefail
           package_name=$(node -p "require('./package.json').name")
           version=$(node -p "require('./package.json').version")
+          prerelease=$(PACKAGE_VERSION="$version" node --input-type=module -e "import semver from 'semver'; process.stdout.write(String(Boolean(semver.prerelease(process.env.PACKAGE_VERSION))))")
+          if [[ "$prerelease" = true ]]; then
+            publish_tag=next
+          else
+            publish_tag=latest
+          fi
           filename="${package_name#@}"
           filename="${filename//\//-}-$version.tgz"
           echo "filename=$filename" >> "$GITHUB_OUTPUT"
           echo "package_name=$package_name" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "publish_tag=$publish_tag" >> "$GITHUB_OUTPUT"
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Build release tarball and checksum
@@ -170,19 +181,35 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_NOTES: |
-            Install the prerelease from npm with `dsh plugin --profile demo add dsh-plugin-observatory@next`, or download the attached tarball and verify its SHA-256 checksum before adding it to a profile.
-
-            This release fixes profile activation when the optional invariant registry is absent. The companion now activates with Observatory, waits internally for the registry, and registers automatically if that service appears later. The package metadata marks @deepseek-ai/dsh-invariants as an optional peer, and the release gate now includes a real profile boot.
-
-            This release candidate is validated with @deepseek-ai/dsh 0.1.0-rc.6 on Node.js 22.19.0 and 24. Static compatibility findings do not establish arbitrary plugin execution safety.
         run: |
           set -euo pipefail
           filename="${{ needs.package.outputs.filename }}"
           tag="${{ needs.package.outputs.tag }}"
           version="${{ needs.package.outputs.version }}"
+          prerelease="${{ needs.package.outputs.prerelease }}"
+          if [[ "$prerelease" = true ]]; then
+            release_kind=(--prerelease)
+            release_notes=$(cat <<EOF
+          Install this release candidate from npm with \`dsh plugin --profile demo add dsh-plugin-observatory@next\`, or download the attached tarball and verify its SHA-256 checksum before adding it to a profile.
+
+          This release includes bounded static compatibility auditing, Loader lifecycle observation, optional invariant-registry integration, and real profile boot verification.
+
+          This release candidate is validated with @deepseek-ai/dsh $DSH_VERSION on Node.js 22.19.0 and 24. Static compatibility findings do not establish arbitrary plugin execution safety.
+          EOF
+          )
+          else
+            release_kind=()
+            release_notes=$(cat <<EOF
+          Install the stable release from npm with \`dsh plugin --profile demo add dsh-plugin-observatory\`, or download the attached tarball and verify its SHA-256 checksum before adding it to a profile.
+
+          Version $version is a stable release of Observatory. It provides bounded static plugin compatibility auditing, Loader lifecycle observation, hardened YAML patch traversal, explicit host-version detection, optional invariant-registry integration, and verified profile activation and removal.
+
+          This stable release is validated with @deepseek-ai/dsh $DSH_VERSION on Node.js 22.19.0 and 24. Static compatibility findings do not establish arbitrary plugin execution safety.
+          EOF
+          )
+          fi
           if ! gh release list --limit 100 --json tagName | jq -e --arg tag "$tag" '.[] | select(.tagName == $tag)' >/dev/null; then
-            gh release create "$tag" --draft --prerelease --verify-tag --title "dsh-plugin-observatory v$version" --notes "$RELEASE_NOTES"
+            gh release create "$tag" --draft "${release_kind[@]}" --verify-tag --title "dsh-plugin-observatory v$version" --notes "$release_notes"
           fi
           verify_or_upload() {
             local path="$1"
@@ -207,12 +234,16 @@ jobs:
           set -euo pipefail
           package_name="${{ needs.package.outputs.package_name }}"
           version="${{ needs.package.outputs.version }}"
+          prerelease="${{ needs.package.outputs.prerelease }}"
+          publish_tag="${{ needs.package.outputs.publish_tag }}"
           tarball="./release-artifacts/${{ needs.package.outputs.filename }}"
-          latest_before=$(npm view "$package_name" dist-tags.latest --json 2>/dev/null | jq -r '. // empty' || true)
+          dist_tags_before=$(npm view "$package_name" dist-tags --json 2>/dev/null || echo '{}')
+          latest_before=$(jq -r '.latest // empty' <<<"$dist_tags_before")
+          next_before=$(jq -r '.next // empty' <<<"$dist_tags_before")
           local_integrity=$(node -e "const fs=require('node:fs');const crypto=require('node:crypto');process.stdout.write('sha512-'+crypto.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))" "$tarball")
           remote_integrity=$(npm view "$package_name@$version" dist.integrity --json 2>/dev/null | jq -r 'if type == "string" then . else empty end' || true)
           if [[ -z "$remote_integrity" ]]; then
-            npm publish "$tarball" --tag next --access public --provenance
+            npm publish "$tarball" --tag "$publish_tag" --access public --provenance
           elif [[ "$remote_integrity" != "$local_integrity" ]]; then
             echo "npm integrity mismatch for $package_name@$version" >&2
             exit 1
@@ -229,15 +260,27 @@ jobs:
             sleep 10
           done
           dist_tags=$(npm view "$package_name" dist-tags --json)
-          test "$(jq -r '.next // empty' <<<"$dist_tags")" = "$version"
           latest_after=$(jq -r '.latest // empty' <<<"$dist_tags")
-          test "$latest_after" = "$latest_before"
-          test "$latest_after" != "$version"
+          next_after=$(jq -r '.next // empty' <<<"$dist_tags")
+          if [[ "$prerelease" = true ]]; then
+            test "$next_after" = "$version"
+            test "$latest_after" = "$latest_before"
+            test "$latest_after" != "$version"
+          else
+            test "$latest_after" = "$version"
+            test "$next_after" = "$next_before"
+          fi
       - name: Verify registry installation
         run: pnpm run test:e2e
         env:
           PACKAGE_SPEC: ${{ needs.package.outputs.package_name }}@${{ needs.package.outputs.version }}
-      - name: Publish GitHub prerelease
+      - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "${{ needs.package.outputs.tag }}" --draft=false --prerelease
+        shell: bash
+        run: |
+          if [[ "${{ needs.package.outputs.prerelease }}" = true ]]; then
+            gh release edit "${{ needs.package.outputs.tag }}" --draft=false --prerelease
+          else
+            gh release edit "${{ needs.package.outputs.tag }}" --draft=false --prerelease=false
+          fi
