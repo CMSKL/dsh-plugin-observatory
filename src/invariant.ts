@@ -8,8 +8,8 @@ const PACKAGE_NAME = 'dsh-plugin-observatory'
 
 /** Cordis companion plugin name. */
 export const name = 'observatory-invariant'
-/** Service required before the companion can reserve package ownership. */
-export const inject = ['invariants']
+/** Main service required before this companion starts waiting for the optional registry. */
+export const inject = ['pluginObservatory']
 
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: Parameters<InvariantInstaller>[1]) => {
   ctx.on('internal/status', (fiber, oldState) => {
@@ -18,9 +18,12 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Parameter
 }, { inject: ['pluginObservatory'] })
 
 /**
- * Register the invariant that every retained latest transition matches the delivered root-Fiber status event.
- * @param ctx - Cordis context carrying the invariant registry and Observatory service.
- * @returns the installed registration's disposer after setup succeeds.
+ * Register the invariant when the host exposes its optional registry.
+ * The outer companion remains active while the inner injection waits, so a
+ * default profile without `ctx.invariants` still passes DSH's activation gate.
+ * @param ctx - Cordis context carrying the Observatory service.
  */
-export const apply = (ctx: Context): Promise<() => void> =>
-  Promise.resolve(ctx.invariants.register(PACKAGE_NAME, install))
+export const apply = (ctx: Context): void => {
+  void ctx.inject(['invariants'], invariantCtx =>
+    invariantCtx.invariants.register(PACKAGE_NAME, install))
+}

@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import Observatory from '../src/index.ts'
@@ -23,7 +22,7 @@ afterEach(async () => {
 })
 
 describe('real Loader composition', () => {
-  it('boots the service row through Include while the test host mounts its invariant', async () => {
+  it('boots both bundle rows when the host does not mount an invariant registry', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-observatory-loader-'))
     const configPath = join(root, 'cordis.yml')
     await writeFile(configPath, [
@@ -32,7 +31,6 @@ describe('real Loader composition', () => {
       "- name: '@deepseek-ai/cordis-plugin-include'",
       '  config:',
       "    path: './bundle.yml'",
-      "- name: '@deepseek-ai/dsh-invariants'",
       '',
     ].join('\n'))
     await writeFile(join(root, 'bundle.yml'), [
@@ -53,7 +51,6 @@ describe('real Loader composition', () => {
       ['@deepseek-ai/dsh-system-prompt', SystemPrompt],
       ['@deepseek-ai/dsh-tools', ToolRuntime],
       ['@deepseek-ai/cordis-plugin-include', Include],
-      ['@deepseek-ai/dsh-invariants', InvariantRegistry],
       ['dsh-plugin-observatory', Observatory],
       ['dsh-plugin-observatory/invariant', ObservatoryInvariant],
     ])

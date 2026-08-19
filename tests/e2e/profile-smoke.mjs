@@ -1,10 +1,11 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { setTimeout as delay } from 'node:timers/promises'
 import * as yaml from 'js-yaml'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 
@@ -39,6 +40,43 @@ async function run(file, args, options = {}) {
       `command failed: ${file} ${args.join(' ')}\n${stdout}${stderr}`,
       { cause: error },
     )
+  }
+}
+
+async function assertProfileBoots(file, args, options = {}) {
+  const child = spawn(file, args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    ...options,
+  })
+  let stdout = ''
+  let stderr = ''
+  child.stdout.setEncoding('utf8')
+  child.stderr.setEncoding('utf8')
+  child.stdout.on('data', chunk => { stdout += chunk })
+  child.stderr.on('data', chunk => { stderr += chunk })
+  const completion = new Promise((resolve, reject) => {
+    child.once('error', reject)
+    child.once('exit', (code, signal) => resolve({ code, signal }))
+  })
+  const earlyExit = await Promise.race([
+    completion,
+    delay(2_000).then(() => undefined),
+  ])
+  if (earlyExit !== undefined) {
+    throw new Error(
+      `profile exited before its activation smoke window: ${file} ${args.join(' ')}\n`
+      + `${stdout}${stderr}`,
+    )
+  }
+  child.kill('SIGTERM')
+  const stopped = await Promise.race([
+    completion,
+    delay(5_000).then(() => undefined),
+  ])
+  if (stopped === undefined) {
+    child.kill('SIGKILL')
+    await completion
+    throw new Error(`profile did not stop after its activation smoke test: ${file} ${args.join(' ')}`)
   }
 }
 
@@ -122,10 +160,15 @@ try {
   )
   assert(installedManifest.name === expectedPackageName, `expected package ${expectedPackageName}, got ${installedManifest.name}`)
   assert(installedManifest.version === expectedPackageVersion, `expected package ${expectedPackageVersion}, got ${installedManifest.version}`)
+  assert(
+    installedManifest.peerDependenciesMeta?.['@deepseek-ai/dsh-invariants']?.optional === true,
+    'published manifest must mark @deepseek-ai/dsh-invariants as an optional peer',
+  )
   const mainModule = await import(pathToFileURL(profileRequire.resolve(expectedPackageName)).href)
   const invariantModule = await import(pathToFileURL(profileRequire.resolve(`${expectedPackageName}/invariant`)).href)
   assert(typeof mainModule.default === 'function', 'package main export must be loadable')
   assert(typeof invariantModule.apply === 'function', 'package invariant export must be loadable')
+  await assertProfileBoots(dshBin, ['--profile', profileName], { env })
 
   await run(dshBin, ['plugin', '--profile', profileName, 'remove', expectedPackageName], { env })
   const removedDump = await run(dshBin, ['--profile', profileName, '--dump-config'], { env })

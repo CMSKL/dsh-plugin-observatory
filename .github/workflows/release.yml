@@ -173,6 +173,8 @@ jobs:
           RELEASE_NOTES: |
             Install the prerelease from npm with `dsh plugin --profile demo add dsh-plugin-observatory@next`, or download the attached tarball and verify its SHA-256 checksum before adding it to a profile.
 
+            This release fixes profile activation when the optional invariant registry is absent. The companion now activates with Observatory, waits internally for the registry, and registers automatically if that service appears later. The package metadata marks @deepseek-ai/dsh-invariants as an optional peer, and the release gate now includes a real profile boot.
+
             This release candidate is validated with @deepseek-ai/dsh 0.1.0-rc.6 on Node.js 22.19.0 and 24. Static compatibility findings do not establish arbitrary plugin execution safety.
         run: |
           set -euo pipefail
@@ -207,6 +209,7 @@ jobs:
           version="${{ needs.package.outputs.version }}"
           tarball="./release-artifacts/${{ needs.package.outputs.filename }}"
           latest_before=$(npm view "$package_name" dist-tags.latest --json 2>/dev/null | jq -r '. // empty' || true)
+          test -z "$latest_before"
           local_integrity=$(node -e "const fs=require('node:fs');const crypto=require('node:crypto');process.stdout.write('sha512-'+crypto.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))" "$tarball")
           remote_integrity=$(npm view "$package_name@$version" dist.integrity --json 2>/dev/null | jq -r 'if type == "string" then . else empty end' || true)
           if [[ -z "$remote_integrity" ]]; then
@@ -229,8 +232,7 @@ jobs:
           dist_tags=$(npm view "$package_name" dist-tags --json)
           test "$(jq -r '.next // empty' <<<"$dist_tags")" = "$version"
           latest_after=$(jq -r '.latest // empty' <<<"$dist_tags")
-          test "$latest_after" = "$latest_before"
-          test "$latest_after" != "$version"
+          test -z "$latest_after"
       - name: Verify registry installation
         run: pnpm run test:e2e
         env:

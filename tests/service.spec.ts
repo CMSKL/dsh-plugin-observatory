@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
@@ -132,6 +132,24 @@ describe('PluginObservatoryService', () => {
     const mounted = await mount()
     await mounted.ctx.loader.create({ name: 'cordis:active' })
     await mounted.ctx.loader.create({ name: 'cordis:pending' })
+  })
+
+  it('activates without a host invariant registry and registers when one appears later', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(Loader)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(Observatory)
+    await ctx.plugin(ObservatoryInvariant)
+
+    expect(ctx.tools.schemas().map(schema => schema.name)).toEqual(['plugin_audit', 'plugin_observe'])
+
+    await ctx.plugin(InvariantRegistry)
+    await vi.waitFor(() => {
+      const registrations = (ctx.invariants as unknown as { registrations: Set<string> }).registrations
+      expect(registrations).toContain('dsh-plugin-observatory')
+    })
   })
 
   it('fails invalid direct configuration before registering tools', async () => {

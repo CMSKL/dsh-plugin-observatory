@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-observatory",
   "description": "Independent DSH plugin compatibility audit and bounded Loader lifecycle observation",
-  "version": "0.1.0-rc.2",
+  "version": "0.1.0-rc.3",
   "publishConfig": {
     "access": "public",
     "tag": "next",
@@ -74,6 +74,11 @@
     "@deepseek-ai/cordis-plugin-loader": ">=1.0.2 <2",
     "@deepseek-ai/dsh-invariants": ">=0.1.0-rc.6 <0.2.0",
     "@deepseek-ai/dsh-tools": ">=0.1.0-rc.6 <0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-invariants": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.1",

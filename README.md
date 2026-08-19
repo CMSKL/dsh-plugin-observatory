@@ -11,7 +11,7 @@ An independent, installable DSH plugin bundle for compatibility audits and runti
 
 `PluginObservatoryService.audit(packagePath, cwd, signal?)` exposes the same static audit to trusted plugins. The service captures host package versions once when it activates: the DSH CLI package is authoritative when resolvable, otherwise one consistent version from the active DSH release family is used. An unavailable or conflicting host version produces an explicit review warning. `snapshot(entryId?)` returns a detached point-in-time lifecycle report, and `assertObservedTransition(...)` supports the invariant companion. Loader remains the current-state authority; the Observatory owns only its bounded process-local transition history.
 
-The current release is a prerelease, and npm publishes new release candidates only under the `next` dist-tag. npm's first-package bootstrap also assigned `latest` to `0.1.0-rc.1`; prerelease automation keeps that bootstrap tag frozen and never advances it. Use `@next` or an exact version instead of an unqualified package spec until a stable release intentionally replaces `latest`.
+The current release is a prerelease, and npm publishes release candidates only under the `next` dist-tag. The `latest` tag is intentionally unset so an unqualified install cannot silently select a prerelease or an obsolete bootstrap build. Use `@next` or an exact version until a stable release intentionally establishes `latest`.
 
 ## Configuration
 
@@ -36,14 +36,14 @@ dsh plugin --profile demo add dsh-plugin-observatory@next
 For a reproducible install, pin the exact version:
 
 ```sh
-dsh plugin --profile demo add dsh-plugin-observatory@0.1.0-rc.2
+dsh plugin --profile demo add dsh-plugin-observatory@0.1.0-rc.3
 ```
 
-Alternatively, download the tarball and checksum from the [v0.1.0-rc.2 GitHub Release](https://github.com/CMSKL/dsh-plugin-observatory/releases/tag/v0.1.0-rc.2), then verify and install it:
+Alternatively, download the tarball and checksum from the [v0.1.0-rc.3 GitHub Release](https://github.com/CMSKL/dsh-plugin-observatory/releases/tag/v0.1.0-rc.3), then verify and install it:
 
 ```sh
-shasum -a 256 -c dsh-plugin-observatory-0.1.0-rc.2.tgz.sha256
-dsh plugin --profile demo add ./dsh-plugin-observatory-0.1.0-rc.2.tgz
+shasum -a 256 -c dsh-plugin-observatory-0.1.0-rc.3.tgz.sha256
+dsh plugin --profile demo add ./dsh-plugin-observatory-0.1.0-rc.3.tgz
 ```
 
 The config dump should contain the `observatory` and `observatory-invariant` rows from `cordis.patch.yml`:
@@ -51,6 +51,8 @@ The config dump should contain the `observatory` and `observatory-invariant` row
 ```sh
 dsh --profile demo --dump-config
 ```
+
+The invariant companion activates even when the profile does not provide `ctx.invariants`; in that case it waits internally and registers automatically if the service appears later. A missing optional invariant registry therefore does not block the profile activation gate or the two Observatory tools.
 
 Start the selected profile normally after checking the composed configuration. Remove the bundle with `dsh plugin --profile demo remove dsh-plugin-observatory`.
 
@@ -82,7 +84,7 @@ pnpm pack --dry-run
 
 Runtime DSH and Cordis packages are peer dependencies; development uses their published versions rather than workspace links into the official Harness repository.
 
-The required compatibility matrix runs DSH `0.1.0-rc.6` on Node `22.19.0` and Node `24`. The E2E test installs either the exact release tarball or a pinned registry version into an isolated temporary DSH profile, verifies the installed name and version, both bundle rows, and both exports, then removes it without touching user profiles. CI also probes the latest published DSH version on a weekly and manually triggered workflow.
+The required compatibility matrix runs DSH `0.1.0-rc.6` on Node `22.19.0` and Node `24`. The E2E test installs either the exact release tarball or a pinned registry version into an isolated temporary DSH profile, verifies the installed name and version, both bundle rows, both exports, and a real profile boot through the activation gate, then removes it without touching user profiles. CI also probes the latest published DSH version on a weekly and manually triggered workflow.
 
 ## Model Experience
 
