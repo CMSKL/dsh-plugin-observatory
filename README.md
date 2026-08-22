@@ -2,12 +2,59 @@
 
 English | [中文](README.zh.md)
 
-An independent, installable DSH plugin bundle for compatibility audits and runtime observation. It lives outside the DeepSeek Harness repository and integrates only through the public bundle, Cordis service, Loader event, and tool-registration interfaces. Its `dsh.bundle` patch mounts `PluginObservatoryService` at `ctx.pluginObservatory` and the package-owned invariant companion. The service registers two read-only tools:
+Pre-install checks for DSH plugins, plus bounded observation of the Loader lifecycle after a plugin is mounted.
+
+This package is for DSH plugin authors, maintainers, and tooling builders who need a quick answer before activation. Does a local plugin declare the bundle, runtime dependencies, and supported host versions correctly? Which bundle rows does its patch add? What Loader transitions have occurred in the current process?
+
+You get two read-only tools:
 
 - `plugin_audit` inspects one local package's `package.json` and declared `dsh.bundle.patch`. It checks manifest completeness, DSH/Cordis/Node version ranges, runtime dependency declarations, install lifecycle scripts, patch rows, duplicate ids, path containment, and unevaluated `!!js` expressions.
 - `plugin_observe` projects current non-group Loader entries and their bounded root-Fiber transitions observed since this plugin activated.
 
-`plugin_audit` returns report version `1` with a `compatible`, `needs-review`, or `incompatible` verdict. Errors determine incompatibility; warnings require review. The report carries no timestamp, sorts findings deterministically, and does not import target JavaScript or evaluate bundle expressions. Package and patch reads are byte-bounded, require valid UTF-8, resolve symlinks, and remain under an allowlisted root. Parsed patch graphs are also bounded by nesting depth and object/array visits; cyclic YAML aliases produce an incompatible report instead of recursive exhaustion.
+`plugin_audit` returns a deterministic, machine-readable report with a `compatible`, `needs-review`, or `incompatible` verdict. It reads package metadata and the declared patch without importing target JavaScript or evaluating patch expressions, so it can be used as a pre-install compatibility signal. `plugin_observe` is process-local and bounded, making recent Loader state and transitions inspectable without becoming a second source of truth.
+
+## Quick start
+
+Install the stable bundle into a DSH profile:
+
+```sh
+dsh plugin --profile demo add dsh-plugin-observatory@0.1.0
+```
+
+From a running profile, ask the model to audit a local plugin:
+
+```text
+Use plugin_audit on the local package at /path/to/my-plugin. Return the verdict, issues, and inserted bundle entries.
+```
+
+To try the audit against this checkout, use `package_path` set to `.` while the profile session runs from the repository root. The result is a JSON report. A representative result for this repository is:
+
+```json
+{
+  "verdict": "needs-review",
+  "issues": [
+    {
+      "severity": "warning",
+      "code": "lifecycle-script",
+      "path": "package.json#scripts.prepare"
+    }
+  ],
+  "bundle": {
+    "insertedEntries": [
+      { "id": "observatory", "moduleName": "dsh-plugin-observatory" },
+      { "id": "observatory-invariant", "moduleName": "dsh-plugin-observatory/invariant" }
+    ]
+  }
+}
+```
+
+This `needs-review` result is expected for the source checkout because `prepare` builds TypeScript during common install flows. It is a review finding, not an assertion that the bundle is incompatible. A plugin with compatible ranges and no review findings can return `compatible`. To inspect the current runtime instead, ask the model to use `plugin_observe` and list the non-group Loader entries and their retained transitions.
+
+If this helps you catch a plugin issue before activation, consider [starring the repository](https://github.com/CMSKL/dsh-plugin-observatory) so you can find future compatibility updates.
+
+The package lives outside the DeepSeek Harness repository and integrates through public bundle, Cordis service, Loader event, and tool-registration interfaces. Its `dsh.bundle` patch mounts `PluginObservatoryService` at `ctx.pluginObservatory` and the package-owned invariant companion.
+
+The report carries no timestamp, sorts findings deterministically, and does not import target JavaScript or evaluate bundle expressions. Package and patch reads are byte-bounded, require valid UTF-8, resolve symlinks, and remain under an allowlisted root. Parsed patch graphs are also bounded by nesting depth and object/array visits; cyclic YAML aliases produce an incompatible report instead of recursive exhaustion.
 
 `PluginObservatoryService.audit(packagePath, cwd, signal?)` exposes the same static audit to trusted plugins. The service captures host package versions once when it activates: the DSH CLI package is authoritative when resolvable, otherwise one consistent version from the active DSH release family is used. An unavailable or conflicting host version produces an explicit review warning. `snapshot(entryId?)` returns a detached point-in-time lifecycle report, and `assertObservedTransition(...)` supports the invariant companion. Loader remains the current-state authority; the Observatory owns only its bounded process-local transition history.
 
@@ -25,7 +72,7 @@ Version `0.1.0` is the first stable release and is published under npm's `latest
 | `maxObservedEntries` | `256` | Maximum Loader entry histories retained in memory. |
 | `maxTransitionsPerEntry` | `64` | Maximum recent transitions retained for one Loader entry. |
 
-## Install
+## Installation details
 
 Install the current stable release into a DSH profile:
 

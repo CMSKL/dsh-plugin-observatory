@@ -1,6 +1,16 @@
 {
   "name": "dsh-plugin-observatory",
-  "description": "Independent DSH plugin compatibility audit and bounded Loader lifecycle observation",
+  "description": "Static DSH plugin compatibility audit before installation, plus bounded Loader lifecycle observation",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "plugin-compatibility",
+    "plugin-audit",
+    "cordis",
+    "loader",
+    "runtime-observation"
+  ],
   "version": "0.1.0",
   "publishConfig": {
     "access": "public",

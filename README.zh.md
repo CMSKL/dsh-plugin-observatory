@@ -2,12 +2,59 @@
 
 [English](README.md) | 中文
 
-这是一个用于兼容性审计与运行时观测的独立、可安装 DSH 插件 bundle。项目位于 DeepSeek Harness 官方仓库之外，只通过公开的 bundle、Cordis 服务、Loader 事件和工具注册接口接入 Harness。它的 `dsh.bundle` 补丁把 `PluginObservatoryService` 挂载到 `ctx.pluginObservatory`，并挂载本包拥有的 invariant companion。服务注册两个只读工具：
+这是一个用于 DSH 插件安装前检查，以及插件挂载后 Loader 生命周期观测的独立 bundle。
+
+它面向 DSH 插件作者、维护者和工具开发者，帮助你在激活插件前快速判断本地包是否声明了正确的 bundle、运行时依赖和宿主版本范围，补丁会插入哪些 bundle 行，以及当前进程里发生过哪些 Loader 转换。
+
+本包提供两个只读工具：
 
 - `plugin_audit` 检查本地包的 `package.json` 与其中声明的 `dsh.bundle.patch`。检查项包括 manifest（元数据清单）完整性、DSH／Cordis／Node 版本范围、运行时依赖声明、安装生命周期脚本、补丁行、重复 id、路径约束，以及尚未求值的 `!!js` 表达式。
 - `plugin_observe` 投影当前非 group Loader 条目，以及本插件激活后观测到的有界根 fiber 转换历史。
 
-`plugin_audit` 返回版本为 `1` 的报告，结论为 `compatible`、`needs-review` 或 `incompatible`。错误会判定为不兼容，警告则要求人工复核。报告不含时间戳，检查项按确定顺序排列，并且不会导入目标 JavaScript 或求值 bundle 表达式。包文件与补丁的读取都有字节上限，要求有效 UTF-8，会解析符号链接，并且必须留在允许的根目录中。解析后的 patch 图还受嵌套深度和对象／数组访问次数限制；循环 YAML alias 会返回不兼容报告，而不会耗尽递归栈。
+`plugin_audit` 返回确定性的机器可读 JSON 报告，结论为 `compatible`、`needs-review` 或 `incompatible`。它只读取包元数据和声明的补丁，不会导入目标 JavaScript，也不会求值补丁表达式，因此可以用于安装前兼容性判断。`plugin_observe` 只保留有界的进程内状态和转换历史，不会替代 Loader 的当前状态。
+
+## 快速上手
+
+把稳定版 bundle 安装到 DSH profile：
+
+```sh
+dsh plugin --profile demo add dsh-plugin-observatory@0.1.0
+```
+
+在运行中的 profile 里，让模型审计一个本地插件：
+
+```text
+请使用 plugin_audit 检查 /path/to/my-plugin，并返回 verdict、issues 和插入的 bundle 条目。
+```
+
+也可以在从本仓库根目录运行的 profile 中，把 `package_path` 设为 `.` 来审计当前 checkout。结果是 JSON 报告。本仓库的一次代表性结果如下：
+
+```json
+{
+  "verdict": "needs-review",
+  "issues": [
+    {
+      "severity": "warning",
+      "code": "lifecycle-script",
+      "path": "package.json#scripts.prepare"
+    }
+  ],
+  "bundle": {
+    "insertedEntries": [
+      { "id": "observatory", "moduleName": "dsh-plugin-observatory" },
+      { "id": "observatory-invariant", "moduleName": "dsh-plugin-observatory/invariant" }
+    ]
+  }
+}
+```
+
+本仓库出现 `needs-review` 是因为源码包在常见安装流程中会通过 `prepare` 构建 TypeScript。这是需要人工查看的提示，不代表 bundle 不兼容。版本范围兼容且没有复核项的插件可以返回 `compatible`。如果要查看当前运行时状态，可以让模型使用 `plugin_observe`，列出非 group Loader 条目和保留的转换历史。
+
+如果这个工具帮你在插件激活前发现了问题，欢迎给[项目点一个 Star](https://github.com/CMSKL/dsh-plugin-observatory)，方便之后找到兼容性更新。
+
+本包位于 DeepSeek Harness 官方仓库之外，通过公开的 bundle、Cordis 服务、Loader 事件和工具注册接口接入 Harness。它的 `dsh.bundle` 补丁把 `PluginObservatoryService` 挂载到 `ctx.pluginObservatory`，并挂载本包拥有的 invariant companion。
+
+报告不含时间戳，检查项按确定顺序排列，并且不会导入目标 JavaScript 或求值 bundle 表达式。包文件与补丁的读取都有字节上限，要求有效 UTF-8，会解析符号链接，并且必须留在允许的根目录中。解析后的 patch 图还受嵌套深度和对象／数组访问次数限制；循环 YAML alias 会返回不兼容报告，而不会耗尽递归栈。
 
 `PluginObservatoryService.audit(packagePath, cwd, signal?)` 向受信插件暴露同一套静态审计。服务在激活时只采集一次宿主包版本：能够解析 DSH CLI 包时以它为准，否则使用当前 DSH 发行族中一致的核心包版本；版本不可用或相互冲突时会产生明确的人工复核警告。`snapshot(entryId?)` 返回分离的调用时点生命周期报告，`assertObservedTransition(...)` 支持 invariant companion。Loader 仍是当前状态的权威；Observatory 只拥有有界、进程本地的转换历史。
 
@@ -25,7 +72,7 @@
 | `maxObservedEntries` | `256` | 内存中最多保留的 Loader 条目历史数。 |
 | `maxTransitionsPerEntry` | `64` | 每个 Loader 条目最多保留的最近转换数。 |
 
-## 安装
+## 安装细节
 
 把当前 npm 稳定版本安装到 DSH profile：
 
